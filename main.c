@@ -10,6 +10,7 @@
 #include <getopt.h>
 #include <errno.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 
 #define MINPORT 0
 #define MAXPORT 65535
@@ -127,6 +128,28 @@ int main(int argc, char *argv[]) {
     ssh_bind_options_set(sshbind, SSH_BIND_OPTIONS_BINDPORT, &port);
     ssh_bind_options_set(sshbind, SSH_BIND_OPTIONS_HOSTKEY, "ssh-rsa");
     ssh_bind_options_set(sshbind, SSH_BIND_OPTIONS_RSAKEY,RSA_KEYFILE);
+
+    /* Check for RSA key file by attempting to open, or else write an auto-generated key */
+    int file = open(RSA_KEYFILE, O_RDONLY);
+    if (file < 0) {
+        printf("Automatically generating RSA keyfile: %s\n", RSA_KEYFILE);
+
+        /* Generate RSA key with 2048-bit default just like "ssh-keygen -t rsa" does */
+        ssh_key key;
+        int rv = ssh_pki_generate(SSH_KEYTYPE_RSA, 2048, &key);
+        if (rv != SSH_OK) {
+            printf("Error generating RSA key: %s\n", RSA_KEYFILE);
+            return -1;
+        }
+
+        /* Export key to key file */
+        rv = ssh_pki_export_privkey_file(key, NULL, NULL, NULL, RSA_KEYFILE);
+        if (rv != SSH_OK) {
+            printf("Error writing RSA key to file: %s\n", RSA_KEYFILE);
+            return -1;
+        }
+    }
+    close(file);
 
     /* Listen on `port' for connections. */
     if (ssh_bind_listen(sshbind) < 0) {
